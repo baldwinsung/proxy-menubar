@@ -65,6 +65,12 @@ SimpleProxyMenuBar/
 └── README.md
 ```
 
+## Screenshots
+
+| Menu bar | Proxy configuration | Proxy server list |
+|---|---|---|
+| ![Menu bar](screenshots/menu-bar.png) | ![Proxy configuration](screenshots/proxy_configuration.png) | ![Proxy server list](screenshots/proxy-server-list.png) |
+
 ## How Proxy Detection Works
 
 Iterates every network service from `networksetup -listallnetworkservices` and checks:
