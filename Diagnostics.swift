@@ -152,11 +152,23 @@ final class ProxyDiagnostics {
 
         // 5
         r.section("5. Egress (public IP from \(ProxyDiagnostics.egressURL.host ?? ""))")
-        let direct = fetchIPDirect()
-        let system = fetchIP(proxy: nil, direct: false)
-        if let ip = direct.ip { r.add(.info, "Direct (no proxy):     \(ip)") } else {
-            r.add(.info, "Direct (no proxy):     failed — \(direct.error ?? "?") (normal if only the proxy may reach the internet)")
+        // Is a direct connection possible at all? A plain BSD socket can't be
+        // routed through a proxy, so this is the ground truth.
+        let tcp = directConnect(host: ProxyDiagnostics.egressURL.host ?? "")
+        let directBlocked = tcp.error != nil
+        var direct = FetchResult(ms: tcp.ms)
+        if let e = tcp.error {
+            direct.error = e
+            r.add(.info, "Direct (no proxy):     blocked — \(e)")
+        } else {
+            direct = fetchIPDirect()
+            if let ip = direct.ip {
+                r.add(.info, "Direct (no proxy):     \(ip)")
+            } else {
+                r.add(.info, "Direct (no proxy):     open (TCP connect in \(tcp.ms) ms), IP lookup failed — \(direct.error ?? "?")")
+            }
         }
+        let system = fetchIP(proxy: nil, direct: false)
         if let ip = system.ip {
             r.add(.info, "System (macOS path):   \(ip)")
         } else {
@@ -166,7 +178,11 @@ final class ProxyDiagnostics {
 
         if let sys = system.ip {
             if let want = pacSaysProxyForEgress {
-                if let pip = viaProxyIP[want], pip == sys, direct.ip == pip {
+                if directBlocked, let pip = viaProxyIP[want], pip == sys {
+                    r.add(.ok, "Traffic goes through \(want.label), as the PAC says, and direct connections are blocked, so apps that ignore the proxy settings can't get around it")
+                } else if directBlocked {
+                    r.add(.warn, "Direct connections are blocked, but system egress \(sys) doesn't match \(want.label)'s egress")
+                } else if let pip = viaProxyIP[want], pip == sys, direct.ip == pip {
                     r.add(.warn, "Can't tell from the IP: direct traffic and \(want.label) both leave from \(sys) (the network routes everything out the same exit)")
                 } else if let pip = viaProxyIP[want], pip == sys {
                     r.add(.ok, "Traffic goes through \(want.label), as the PAC says")
@@ -336,8 +352,48 @@ final class ProxyDiagnostics {
 
     // MARK: - 5. Truly direct fetch
 
-    /// GET egressURL over a raw TLS connection with proxies refused, so the
-    /// result can't come through a proxy whatever the system settings say.
+    /// TCP connect with a plain BSD socket. Sockets never go through system
+    /// proxies or a PAC, so this answers "can this Mac reach the internet
+    /// without the proxy?". Network.framework can't: it applied the PAC even
+    /// with preferNoProxies set.
+    private func directConnect(host: String, port: UInt16 = 443, timeout: TimeInterval = 5) -> (ms: Int, error: String?) {
+        let start = Date()
+        func ms() -> Int { Int(Date().timeIntervalSince(start) * 1000) }
+        var hints = addrinfo()
+        hints.ai_family = AF_UNSPEC
+        hints.ai_socktype = SOCK_STREAM
+        var res: UnsafeMutablePointer<addrinfo>?
+        let rc = getaddrinfo(host, String(port), &hints, &res)
+        if rc != 0 { return (ms(), "DNS lookup failed: \(String(cString: gai_strerror(rc)))") }
+        defer { freeaddrinfo(res) }
+        var lastErr = "no address for \(host)"
+        var ai = res
+        while let a = ai {
+            ai = a.pointee.ai_next
+            let left = timeout - Date().timeIntervalSince(start)
+            if left <= 0 { lastErr = "timed out after \(Int(timeout)) s"; break }
+            let fd = socket(a.pointee.ai_family, a.pointee.ai_socktype, a.pointee.ai_protocol)
+            if fd < 0 { lastErr = String(cString: strerror(errno)); continue }
+            defer { close(fd) }
+            _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK)
+            if connect(fd, a.pointee.ai_addr, a.pointee.ai_addrlen) == 0 { return (ms(), nil) }
+            if errno != EINPROGRESS { lastErr = String(cString: strerror(errno)); continue }
+            var pfd = pollfd(fd: fd, events: Int16(POLLOUT), revents: 0)
+            let n = poll(&pfd, 1, Int32(left * 1000))
+            if n == 0 { lastErr = "timed out after \(Int(timeout)) s"; continue }
+            if n < 0 { lastErr = String(cString: strerror(errno)); continue }
+            var soErr: Int32 = 0
+            var len = socklen_t(MemoryLayout<Int32>.size)
+            _ = getsockopt(fd, SOL_SOCKET, SO_ERROR, &soErr, &len)
+            if soErr == 0 { return (ms(), nil) }
+            lastErr = String(cString: strerror(soErr))
+        }
+        return (ms(), lastErr)
+    }
+
+    /// GET egressURL over a raw TLS connection with proxies refused. Only
+    /// called after directConnect succeeds; on its own it isn't proof of a
+    /// direct path (see directConnect).
     private func fetchIPDirect(timeout: TimeInterval = 8) -> FetchResult {
         let host = Self.egressURL.host ?? ""
         let params = NWParameters(tls: NWProtocolTLS.Options(), tcp: NWProtocolTCP.Options())
