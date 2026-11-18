@@ -139,10 +139,6 @@ final class ProxyDiagnostics {
                 r.add(.fail, "\(p.label) — skipped, port not reachable")
                 continue
             }
-            if p.type == "HTTPS" {
-                r.add(.info, "\(p.label) — TLS-to-proxy can't be tested from here")
-                continue
-            }
             let res = fetchIP(proxy: p)
             if let ip = res.ip {
                 r.add(.ok, "\(p.label) — HTTP \(res.status ?? 0) in \(res.ms) ms, egress \(ip)")
@@ -156,7 +152,7 @@ final class ProxyDiagnostics {
 
         // 5
         r.section("5. Egress (public IP from \(ProxyDiagnostics.egressURL.host ?? ""))")
-        let direct = fetchIP(proxy: nil, direct: true)
+        let direct = fetchIPDirect()
         let system = fetchIP(proxy: nil, direct: false)
         if let ip = direct.ip { r.add(.info, "Direct (no proxy):     \(ip)") } else {
             r.add(.info, "Direct (no proxy):     failed — \(direct.error ?? "?") (normal if only the proxy may reach the internet)")
@@ -166,11 +162,13 @@ final class ProxyDiagnostics {
         } else {
             r.add(.fail, "System (macOS path):   failed — \(system.error ?? "HTTP \(system.status ?? 0)")")
         }
-        for (p, ip) in viaProxyIP { r.add(.info, "Via \(p.label):".padding(toLength: 23, withPad: " ", startingAt: 0) + ip) }
+        for (p, ip) in viaProxyIP { r.add(.info, "Via \(p.label): \(ip)") }
 
         if let sys = system.ip {
             if let want = pacSaysProxyForEgress {
-                if let pip = viaProxyIP[want], pip == sys {
+                if let pip = viaProxyIP[want], pip == sys, direct.ip == pip {
+                    r.add(.warn, "Can't tell from the IP: direct traffic and \(want.label) both leave from \(sys) (the network routes everything out the same exit)")
+                } else if let pip = viaProxyIP[want], pip == sys {
                     r.add(.ok, "Traffic goes through \(want.label), as the PAC says")
                 } else if let d = direct.ip, d == sys {
                     r.add(.warn, "PAC says \(want.label), but the system path egresses directly (\(sys)) — macOS isn't applying the PAC (cached? another service first in the service order?)")
@@ -231,7 +229,7 @@ final class ProxyDiagnostics {
         }
         if on("ExcludeSimpleHostnames") { r.add(.info, "Simple hostnames bypass the proxy") }
         if on("ProxyAutoConfigEnable") && (on("HTTPEnable") || on("HTTPSEnable")) {
-            r.add(.warn, "Both a PAC file and manual proxies are on — macOS uses the PAC first; the manual entries are likely stale")
+            r.add(.warn, "Both a PAC file and manual proxies are on. Apps differ in which they use, and the bypass list only applies to the manual ones — keep one (System Settings → Network → Details → Proxies)")
         }
     }
 
@@ -263,7 +261,7 @@ final class ProxyDiagnostics {
             return nil
         }
         if let ct = res.contentType, !ct.contains("proxy-autoconfig"), !ct.contains("javascript") {
-            r.add(.warn, "Content-Type \(ct) — application/x-ns-proxy-autoconfig is expected; some clients reject others")
+            r.add(.info, "Content-Type \(ct) — macOS accepts it; application/x-ns-proxy-autoconfig is the standard type")
         }
         return body
     }
@@ -288,9 +286,10 @@ final class ProxyDiagnostics {
                 if type == (kCFProxyTypeNone as String) { parts.append("DIRECT"); continue }
                 let host = p[kCFProxyHostNameKey as String] as? String ?? "?"
                 let port = (p[kCFProxyPortNumberKey as String] as? NSNumber)?.intValue ?? 0
-                var t = "HTTP"
-                if type == (kCFProxyTypeSOCKS as String) { t = "SOCKS" }
-                if type == (kCFProxyTypeHTTPS as String) { t = "HTTPS" }
+                // kCFProxyTypeHTTPS is what CFNetwork reports for a PAC
+                // "PROXY host:port" on an https:// URL: the same HTTP proxy,
+                // used with CONNECT. Treat it as HTTP so it's tested once.
+                let t = type == (kCFProxyTypeSOCKS as String) ? "SOCKS" : "HTTP"
                 let e = ProxyEndpoint(type: t, host: host, port: port)
                 list.append(e)
                 parts.append(e.label)
@@ -333,6 +332,69 @@ final class ProxyDiagnostics {
         }
         conn.cancel()
         return (ms, error)
+    }
+
+    // MARK: - 5. Truly direct fetch
+
+    /// GET egressURL over a raw TLS connection with proxies refused, so the
+    /// result can't come through a proxy whatever the system settings say.
+    private func fetchIPDirect(timeout: TimeInterval = 8) -> FetchResult {
+        let host = Self.egressURL.host ?? ""
+        let params = NWParameters(tls: NWProtocolTLS.Options(), tcp: NWProtocolTCP.Options())
+        params.preferNoProxies = true
+        let conn = NWConnection(host: NWEndpoint.Host(host), port: 443, using: params)
+        let start = Date()
+        let done = DispatchSemaphore(value: 0)
+        let lock = NSLock()
+        var buffer = Data()
+        var error: String?
+        var finished = false
+        func finish(_ e: String?) {
+            lock.lock(); defer { lock.unlock() }
+            guard !finished else { return }
+            finished = true
+            error = e
+            done.signal()
+        }
+        func receive() {
+            conn.receive(minimumIncompleteLength: 1, maximumLength: 65536) { data, _, complete, err in
+                if let d = data { lock.lock(); buffer.append(d); lock.unlock() }
+                if let e = err { finish(e.localizedDescription); return }
+                if complete { finish(nil) } else { receive() }
+            }
+        }
+        conn.stateUpdateHandler = { state in
+            switch state {
+            case .ready:
+                let req = "GET / HTTP/1.1\r\nHost: \(host)\r\nUser-Agent: ProxyMenuBar/diagnostics\r\nAccept: application/json\r\nConnection: close\r\n\r\n"
+                conn.send(content: req.data(using: .utf8), completion: .contentProcessed { e in
+                    if let e = e { finish(e.localizedDescription) } else { receive() }
+                })
+            case .failed(let e): finish(e.localizedDescription)
+            case .waiting(let e): finish(e.localizedDescription)
+            default: break
+            }
+        }
+        conn.start(queue: DispatchQueue.global(qos: .userInitiated))
+        if done.wait(timeout: .now() + timeout) == .timedOut { finish("timed out after \(Int(timeout)) s") }
+        conn.cancel()
+
+        var out = FetchResult(ms: Int(Date().timeIntervalSince(start) * 1000))
+        lock.lock(); let text = String(decoding: buffer, as: UTF8.self); lock.unlock()
+        if let line = text.components(separatedBy: "\r\n").first, line.hasPrefix("HTTP/") {
+            let parts = line.components(separatedBy: " ")
+            if parts.count > 1 { out.status = Int(parts[1]) }
+        }
+        if let range = text.range(of: "\r\n\r\n") {
+            let body = String(text[range.upperBound...])
+            // Body may be chunked; pull the first IPv4/IPv6-looking token.
+            let pattern = #"\b(?:\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F]{0,4}(?::[0-9a-fA-F]{0,4}){2,7})\b"#
+            if let m = body.range(of: pattern, options: .regularExpression), out.status == 200 {
+                out.ip = String(body[m])
+            }
+        }
+        if out.ip == nil { out.error = error ?? "HTTP \(out.status ?? 0), no IP in response" }
+        return out
     }
 
     // MARK: - 4/5. HTTP through a chosen path
