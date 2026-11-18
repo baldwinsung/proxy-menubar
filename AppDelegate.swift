@@ -1,4 +1,4 @@
-// SimpleProxyMenuBar
+// MacProxyMenuBar
 // Created with assistance from Claude (https://claude.ai) by Anthropic.
 // MIT License — see LICENSE file for details.
 
@@ -472,7 +472,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return SMAppService.mainApp.status == .enabled
         } else {
             let result = shell("osascript -e 'tell application \"System Events\" to get the name of every login item' 2>/dev/null")
-            return result.contains("SimpleProxyMenuBar")
+            return result.contains("MacProxyMenuBar")
         }
     }
 
@@ -492,7 +492,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             let appPath = Bundle.main.bundlePath
             let action  = enable ? "make login item at end with properties {path:\"\(appPath)\", hidden:false}"
-                                 : "delete (every login item whose name is \"SimpleProxyMenuBar\")"
+                                 : "delete (every login item whose name is \"MacProxyMenuBar\")"
             shell("osascript -e 'tell application \"System Events\" to \(action)' 2>/dev/null")
             launchAtLoginMenuItem.state = enable ? .on : .off
         }

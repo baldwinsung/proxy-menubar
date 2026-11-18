@@ -254,7 +254,7 @@
 				DEVELOPMENT_TEAM = 94J95BG4HS;
 				EXECUTABLE_NAME = SimpleProxyMenuBar;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Simple Proxy Menu Bar";
+				INFOPLIST_KEY_CFBundleDisplayName = MacProxyMenuBar;
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2025. MIT License.";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -264,7 +264,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 12.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.user.SimpleProxyMenuBar;
-				PRODUCT_NAME = SimpleProxyMenuBar;
+				PRODUCT_NAME = MacProxyMenuBar;
 				SDKROOT = macosx;
 				SUPPORTED_PLATFORMS = macosx;
 				SWIFT_VERSION = 5.0;
@@ -284,7 +284,7 @@
 				DEVELOPMENT_TEAM = "";
 				EXECUTABLE_NAME = SimpleProxyMenuBar;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Simple Proxy Menu Bar";
+				INFOPLIST_KEY_CFBundleDisplayName = MacProxyMenuBar;
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2025. MIT License.";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -294,7 +294,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 12.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.user.SimpleProxyMenuBar;
-				PRODUCT_NAME = SimpleProxyMenuBar;
+				PRODUCT_NAME = MacProxyMenuBar;
 				SDKROOT = macosx;
 				SUPPORTED_PLATFORMS = macosx;
 				SWIFT_VERSION = 5.0;

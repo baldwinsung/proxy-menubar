@@ -1,4 +1,4 @@
-// SimpleProxyMenuBar — proxy diagnostics.
+// MacProxyMenuBar — proxy diagnostics.
 // Created with assistance from Claude (https://claude.ai) by Anthropic.
 // MIT License — see LICENSE file for details.
 //
@@ -58,7 +58,7 @@ final class DiagnosticsReport {
         let f = DateFormatter()
         f.dateStyle = .medium
         f.timeStyle = .medium
-        let head = "SimpleProxyMenuBar diagnostics — \(f.string(from: started))\nResult: \(summary)\n"
+        let head = "MacProxyMenuBar diagnostics — \(f.string(from: started))\nResult: \(summary)\n"
         return head + "\n" + lines.joined(separator: "\n") + "\n"
     }
 }

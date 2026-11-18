@@ -1,4 +1,8 @@
-# 🛡️ SimpleProxyMenuBar
+# 🛡️ MacProxyMenuBar
+
+Installs as `/Applications/MacProxyMenuBar.app` (called SimpleProxyMenuBar
+before 2026-11-18; `build.sh` removes the old copy, settings carry over). The
+Xcode project and target keep the old `SimpleProxyMenuBar` name.
 
 A lightweight native macOS menu bar app that shows your **current proxy IP address** at a glance.
 
@@ -57,7 +61,6 @@ open SimpleProxyMenuBar.xcodeproj
 ## Build & Install to /Applications
 
 ```bash
-rm -rf ~/Library/Developer/Xcode/DerivedData/SimpleProxyMenuBar-*
 ./build.sh
 ```
 

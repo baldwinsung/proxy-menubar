@@ -15,7 +15,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "AA500001"
-               BuildableName = "SimpleProxyMenuBar.app"
+               BuildableName = "MacProxyMenuBar.app"
                BlueprintName = "SimpleProxyMenuBar"
                ReferencedContainer = "container:SimpleProxyMenuBar.xcodeproj">
             </BuildableReference>
@@ -45,7 +45,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "AA500001"
-            BuildableName = "SimpleProxyMenuBar.app"
+            BuildableName = "MacProxyMenuBar.app"
             BlueprintName = "SimpleProxyMenuBar"
             ReferencedContainer = "container:SimpleProxyMenuBar.xcodeproj">
          </BuildableReference>
@@ -62,7 +62,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "AA500001"
-            BuildableName = "SimpleProxyMenuBar.app"
+            BuildableName = "MacProxyMenuBar.app"
             BlueprintName = "SimpleProxyMenuBar"
             ReferencedContainer = "container:SimpleProxyMenuBar.xcodeproj">
          </BuildableReference>

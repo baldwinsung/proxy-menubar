@@ -1,4 +1,4 @@
-// SimpleProxyMenuBar
+// MacProxyMenuBar
 // Created with assistance from Claude (https://claude.ai) by Anthropic.
 // MIT License — see LICENSE file for details.
 
