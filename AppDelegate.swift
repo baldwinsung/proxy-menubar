@@ -23,9 +23,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     lazy var pacEnabledMenuItem      = NSMenuItem(title: "Enable Auto Proxy", action: #selector(togglePAC), keyEquivalent: "")
     lazy var pacURLMenuItem          = NSMenuItem(title: "Set PAC URL...", action: #selector(setPACURL), keyEquivalent: "")
     lazy var pacCurrentURLMenuItem   = NSMenuItem(title: "PAC URL: —", action: nil, keyEquivalent: "")
+    lazy var diagnosticsMenuItem     = NSMenuItem(title: "🩺  Run Diagnostics…", action: #selector(runDiagnostics), keyEquivalent: "d")
+    lazy var diagnosticsResultItem   = NSMenuItem(title: "Diagnostics: not run yet", action: nil, keyEquivalent: "")
+    lazy var testURLsMenuItem        = NSMenuItem(title: "Set Diagnostic Test URLs…", action: #selector(setTestURLs), keyEquivalent: "")
+    var diagnosticsWindow: DiagnosticsWindowController?
 
     // UserDefaults keys
     let kPACURL = "pac_url"
+    let kDiagOnLaunch = "diag_on_launch"
 
     // MARK: - Launch
 
@@ -41,6 +46,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         buildMenu()
         startAutoRefresh()
         refresh()
+
+        // Set by "Save & Enable": check the new PAC actually works once the
+        // relaunched app has settled.
+        if UserDefaults.standard.bool(forKey: kDiagOnLaunch) {
+            UserDefaults.standard.set(false, forKey: kDiagOnLaunch)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self.runDiagnostics() }
+        }
     }
 
     // MARK: - Menu
@@ -70,6 +82,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         placeholderMenu.addItem(loadingItem)
         proxyServersMenuItem.submenu = placeholderMenu
         menu.addItem(proxyServersMenuItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        // Diagnostics
+        diagnosticsMenuItem.target = self
+        menu.addItem(diagnosticsMenuItem)
+        diagnosticsResultItem.isEnabled = false
+        diagnosticsResultItem.indentationLevel = 1
+        menu.addItem(diagnosticsResultItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -138,6 +159,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Set PAC URL
         pacURLMenuItem.target = self
         proxyMenu.addItem(pacURLMenuItem)
+
+        proxyMenu.addItem(NSMenuItem.separator())
+        testURLsMenuItem.target = self
+        proxyMenu.addItem(testURLsMenuItem)
 
         let proxyConfigItem = NSMenuItem(title: "Proxy Configuration", action: nil, keyEquivalent: "")
         proxyConfigItem.submenu = proxyMenu
@@ -309,6 +334,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
             applyPACToAllServices(url: savedURL, enabled: true)
+            UserDefaults.standard.set(true, forKey: kDiagOnLaunch)
         } else {
             applyPACToAllServices(url: nil, enabled: false)
         }
@@ -347,6 +373,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             updatePACURLMenuItem()
             applyPACToAllServices(url: url, enabled: true)
             pacEnabledMenuItem.state = .on
+            UserDefaults.standard.set(true, forKey: kDiagOnLaunch)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.restartApp() }
 
         case .alertSecondButtonReturn: // Save Only
@@ -390,6 +417,51 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let display = url.count > 50 ? String(url.prefix(47)) + "..." : url
             pacCurrentURLMenuItem.title = "PAC URL: \(display)"
             pacCurrentURLMenuItem.toolTip = url
+        }
+    }
+
+    // MARK: - Diagnostics
+
+    @objc func runDiagnostics() {
+        if diagnosticsWindow == nil {
+            let w = DiagnosticsWindowController()
+            w.onFinished = { [weak self] r in
+                let icon = r.failures > 0 ? "❌" : (r.warnings > 0 ? "⚠️" : "✅")
+                let f = DateFormatter()
+                f.timeStyle = .short
+                self?.diagnosticsResultItem.title = "\(icon) \(r.summary) (\(f.string(from: r.started)))"
+            }
+            diagnosticsWindow = w
+        }
+        diagnosticsWindow?.showAndRun()
+    }
+
+    @objc func setTestURLs() {
+        let alert = NSAlert()
+        alert.messageText = "Diagnostic Test URLs"
+        alert.informativeText = "URLs to run through the PAC file, one per line. Add an internal host to check it goes DIRECT. The PAC server itself is always tested."
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Reset to Defaults")
+        alert.addButton(withTitle: "Cancel")
+        let input = NSTextView(frame: NSRect(x: 0, y: 0, width: 420, height: 110))
+        input.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        input.string = (UserDefaults.standard.stringArray(forKey: ProxyDiagnostics.kTestURLs)
+                        ?? ProxyDiagnostics.defaultTestURLs).joined(separator: "\n")
+        let scroll = NSScrollView(frame: input.frame)
+        scroll.hasVerticalScroller = true
+        scroll.borderType = .bezelBorder
+        scroll.documentView = input
+        alert.accessoryView = scroll
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            let urls = input.string.components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { URL(string: $0)?.host != nil }
+            UserDefaults.standard.set(urls, forKey: ProxyDiagnostics.kTestURLs)
+        case .alertSecondButtonReturn:
+            UserDefaults.standard.removeObject(forKey: ProxyDiagnostics.kTestURLs)
+        default:
+            break
         }
     }
 

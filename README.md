@@ -18,6 +18,21 @@ A lightweight native macOS menu bar app that shows your **current proxy IP addre
 - Auto-refreshes every 30 seconds (toggle on/off)
 - Manual refresh with ⌘R
 - Reverse DNS hostname lookup
+- **🩺 Run Diagnostics… (⌘D)** — does the proxy setup actually work? Runs
+  automatically after **Save & Enable** of a PAC URL:
+  1. **PAC fetch** — HTTP status, size, time; flags a failed download or a file
+     that isn't a PAC (no `FindProxyForURL`)
+  2. **PAC evaluation** — runs the PAC through macOS's own engine for each test
+     URL and shows `DIRECT` or `PROXY host:port` (and PAC script errors)
+  3. **Proxy reachable** — TCP connect to each proxy's port (not ping)
+  4. **Proxy works** — a real HTTPS request through each proxy (spots 407/403)
+  5. **Egress** — public IP direct vs through the system vs per proxy, and
+     whether traffic really goes where the PAC says
+  6. **Effective settings** — PAC, WPAD, manual proxies and bypass list as
+     macOS applies them now
+  Results open in a window with **Copy Report**; the menu shows the last
+  result. Test URLs are editable under **Proxy Configuration → Set Diagnostic
+  Test URLs…** (add an internal host to check it goes DIRECT).
 - **Preferences** → Open at Login toggle
 - **Help** → link to GitHub
 - Hides from Dock (`LSUIElement`) — lives only in the menu bar
@@ -58,6 +73,7 @@ SimpleProxyMenuBar/
 │       └── SimpleProxyMenuBar.xcscheme
 ├── AppDelegate.swift       # Menu bar UI, preferences, help
 ├── ProxyChecker.swift      # Proxy detection + IP fetching
+├── Diagnostics.swift       # Run Diagnostics checks + report window
 ├── main.swift              # Entry point
 ├── Assets.xcassets/        # App icon and accent color
 ├── build.sh                # Build and install to /Applications
