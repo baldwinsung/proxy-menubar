@@ -84,6 +84,12 @@ final class ProxyDiagnostics {
         }
     }
 
+    /// Chrome on macOS can't resolve *.local names, even through the macOS
+    /// resolver (seen 2026-11: ERR_NAME_NOT_RESOLVED while Safari worked).
+    static func chromeCantResolve(_ host: String) -> Bool {
+        host.lowercased().hasSuffix(".local") || host.lowercased().hasSuffix(".local.")
+    }
+
     // MARK: - Run
 
     func run() -> DiagnosticsReport {
@@ -120,6 +126,9 @@ final class ProxyDiagnostics {
         // 3 + 4
         r.section("3. Proxy reachable (TCP connect)")
         if proxies.isEmpty { r.add(.info, "No proxy servers configured or returned by the PAC") }
+        for p in proxies where Self.chromeCantResolve(p.host) {
+            r.add(.warn, "\(p.label) is a .local name: Chrome and other Chromium-based apps can't resolve it, so they get no proxy (Safari can). Use its IP address.")
+        }
         var reachable = Set<ProxyEndpoint>()
         for p in proxies {
             let (ms, err) = tcpConnect(host: p.host, port: p.port)
@@ -254,9 +263,14 @@ final class ProxyDiagnostics {
     private func fetchPAC(_ urlString: String, _ r: DiagnosticsReport) -> String? {
         r.section("1. PAC file")
         r.add(.info, "URL: \(urlString)")
-        guard let url = URL(string: urlString) else {
-            r.add(.fail, "Not a valid URL")
+        guard let url = URL(string: urlString), let host = url.host,
+              ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
+            r.add(.fail, "Not a valid PAC URL: it needs http:// or https:// and a path, e.g. http://\(urlString)/proxy.pac")
+            r.detail("macOS can't fetch it, so it falls back to DIRECT. Fix it in Set PAC URL… (or System Settings → Network → Details → Proxies).")
             return nil
+        }
+        if Self.chromeCantResolve(host) {
+            r.add(.warn, "\(host) is a .local name: Chrome and other Chromium-based apps can't resolve it, so they can't fetch this PAC (Safari can). Use an IP address, or a local copy at http://127.0.0.1:…")
         }
         // macOS fetches the PAC directly, never through a proxy: do the same.
         let res = get(url, proxyDict: Self.directProxyDict, timeout: 6)

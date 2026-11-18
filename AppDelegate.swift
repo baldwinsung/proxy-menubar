@@ -363,6 +363,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let url = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
 
+        // A bare hostname ("pac.example.com") is accepted by networksetup
+        // but macOS can't fetch it, so every app silently goes DIRECT.
+        if response != .alertThirdButtonReturn, !url.isEmpty {
+            let u = URL(string: url)
+            if u?.host == nil || !["http", "https"].contains(u?.scheme?.lowercased() ?? "") {
+                showAlert("Invalid PAC URL", message: "The PAC URL needs http:// or https:// and a path, for example:\n\nhttp://\(url)/proxy.pac")
+                return
+            }
+        }
+
         switch response {
         case .alertFirstButtonReturn:  // Save & Enable
             guard !url.isEmpty else {
