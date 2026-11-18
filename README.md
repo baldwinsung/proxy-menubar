@@ -30,8 +30,8 @@ A lightweight native macOS menu bar app that shows your **current proxy IP addre
 ## Setup
 
 ```bash
-git clone https://github.com/baldwinsung/SimpleProxyMenuBar.git
-cd SimpleProxyMenuBar
+git clone https://github.com/baldwinsung/proxy-menubar.git
+cd proxy-menubar
 open SimpleProxyMenuBar.xcodeproj
 ```
 
