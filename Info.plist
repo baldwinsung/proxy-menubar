@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Merged with Xcode's generated Info.plist (GENERATE_INFOPLIST_FILE = YES).
+     ATS: PAC files are routinely served over plain http (often from
+     127.0.0.1 or a LAN host) and macOS itself fetches them that way, so
+     Diagnostics must be able to as well. NSAllowsArbitraryLoads is used
+     alone on purpose: adding NSAllowsLocalNetworking makes macOS ignore it. -->
+<plist version="1.0">
+<dict>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
+</dict>
+</plist>

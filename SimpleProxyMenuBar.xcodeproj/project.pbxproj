@@ -256,6 +256,8 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = MacProxyMenuBar;
 				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "MacProxyMenuBar connects to proxy servers and PAC hosts on your local network to check that they work.";
+				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2025. MIT License.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -286,6 +288,8 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = MacProxyMenuBar;
 				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "MacProxyMenuBar connects to proxy servers and PAC hosts on your local network to check that they work.";
+				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2025. MIT License.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

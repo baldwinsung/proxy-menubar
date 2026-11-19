@@ -23,6 +23,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     lazy var pacEnabledMenuItem      = NSMenuItem(title: "Enable Auto Proxy", action: #selector(togglePAC), keyEquivalent: "")
     lazy var pacURLMenuItem          = NSMenuItem(title: "Set PAC URL...", action: #selector(setPACURL), keyEquivalent: "")
     lazy var pacCurrentURLMenuItem   = NSMenuItem(title: "PAC URL: —", action: nil, keyEquivalent: "")
+    lazy var pacSourceMenuItem       = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+    lazy var pacSystemMenuItem       = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     lazy var diagnosticsMenuItem     = NSMenuItem(title: "🩺  Run Diagnostics…", action: #selector(runDiagnostics), keyEquivalent: "d")
     lazy var diagnosticsResultItem   = NSMenuItem(title: "Diagnostics: not run yet", action: nil, keyEquivalent: "")
     lazy var testURLsMenuItem        = NSMenuItem(title: "Set Diagnostic Test URLs…", action: #selector(setTestURLs), keyEquivalent: "")
@@ -30,7 +32,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // UserDefaults keys
     let kPACURL = "pac_url"
+    let kPACSource = "pac_url_source"          // "system" | "manual"
+    let kPACLastSystem = "pac_url_last_system" // system PAC URL seen at the last sync
     let kDiagOnLaunch = "diag_on_launch"
+
+    /// The system's PAC as of the last syncPACFromSystem() (nil = none configured).
+    var systemPACSnapshot: SystemPAC?
 
     // MARK: - Launch
 
@@ -43,6 +50,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         proxyChecker = ProxyChecker()
 
+        syncPACFromSystem()
         buildMenu()
         startAutoRefresh()
         refresh()
@@ -138,6 +146,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let quitItem = NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.addItem(quitItem)
 
+        menu.delegate = self   // menuWillOpen re-reads the system PAC
+
         statusItem.menu = menu
     }
 
@@ -153,8 +163,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Current PAC URL (read-only display)
         pacCurrentURLMenuItem.isEnabled = false
+        pacSourceMenuItem.isEnabled = false
+        pacSourceMenuItem.indentationLevel = 1
+        pacSystemMenuItem.isEnabled = false
+        pacSystemMenuItem.indentationLevel = 1
         updatePACURLMenuItem()
         proxyMenu.addItem(pacCurrentURLMenuItem)
+        proxyMenu.addItem(pacSourceMenuItem)
+        proxyMenu.addItem(pacSystemMenuItem)
 
         // Set PAC URL
         pacURLMenuItem.target = self
@@ -380,6 +396,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
             UserDefaults.standard.set(url, forKey: kPACURL)
+            UserDefaults.standard.set("manual", forKey: kPACSource)
+            // We're about to make this the system PAC, so the next sync sees
+            // no external change and keeps it labelled "entered manually".
+            UserDefaults.standard.set(url, forKey: kPACLastSystem)
             updatePACURLMenuItem()
             applyPACToAllServices(url: url, enabled: true)
             pacEnabledMenuItem.state = .on
@@ -389,6 +409,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         case .alertSecondButtonReturn: // Save Only
             guard !url.isEmpty else { return }
             UserDefaults.standard.set(url, forKey: kPACURL)
+            UserDefaults.standard.set("manual", forKey: kPACSource)
             updatePACURLMenuItem()
 
         default: // Cancel
@@ -418,15 +439,73 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .filter { !$0.isEmpty && !$0.hasPrefix("*") }
     }
 
+    /// Reads the PAC URL macOS is configured with. Prefers the effective
+    /// settings (primary service, what apps actually get); when PAC is off
+    /// those omit the URL, so fall back to the URL still stored per service.
+    func systemPAC() -> SystemPAC? {
+        if let s = CFNetworkCopySystemProxySettings()?.takeRetainedValue() as? [String: Any],
+           let url = s[kCFNetworkProxiesProxyAutoConfigURLString as String] as? String,
+           !url.isEmpty {
+            let on = (s[kCFNetworkProxiesProxyAutoConfigEnable as String] as? NSNumber)?.boolValue ?? false
+            return SystemPAC(url: url, enabled: on)
+        }
+        for svc in getNetworkServices() {
+            let out = shell("/usr/sbin/networksetup -getautoproxyurl \"\(svc)\"")
+            for line in out.components(separatedBy: "\n") where line.hasPrefix("URL: ") {
+                let url = String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces)
+                if !url.isEmpty && url != "(null)" {
+                    let on = out.range(of: "Enabled: Yes", options: .caseInsensitive) != nil
+                    return SystemPAC(url: url, enabled: on)
+                }
+            }
+        }
+        return nil
+    }
+
+    /// Makes the app's PAC URL follow the system. If the system PAC changed
+    /// since the last sync (or this is the first sync), the system's URL
+    /// wins and is labelled "from system" — so a stale saved URL can never be
+    /// re-applied by "Enable Auto Proxy". A URL entered here stays labelled
+    /// "entered manually" until something outside the app changes the system PAC.
+    func syncPACFromSystem() {
+        let d = UserDefaults.standard
+        let sys = systemPAC()
+        systemPACSnapshot = sys
+        guard let sys = sys else { return }
+
+        let saved = d.string(forKey: kPACURL) ?? ""
+        if sys.url != d.string(forKey: kPACLastSystem) || saved.isEmpty {
+            d.set(sys.url, forKey: kPACLastSystem)
+            if sys.url != saved {
+                d.set(sys.url, forKey: kPACURL)
+                d.set("system", forKey: kPACSource)
+            }
+        }
+    }
+
     func updatePACURLMenuItem() {
-        let url = UserDefaults.standard.string(forKey: kPACURL) ?? ""
+        let d = UserDefaults.standard
+        let url = d.string(forKey: kPACURL) ?? ""
+        func short(_ s: String) -> String { s.count > 50 ? String(s.prefix(47)) + "..." : s }
+
+        pacSystemMenuItem.isHidden = true
         if url.isEmpty {
             pacCurrentURLMenuItem.title = "PAC URL: not set"
-        } else {
-            // Truncate long URLs for display
-            let display = url.count > 50 ? String(url.prefix(47)) + "..." : url
-            pacCurrentURLMenuItem.title = "PAC URL: \(display)"
-            pacCurrentURLMenuItem.toolTip = url
+            pacCurrentURLMenuItem.toolTip = nil
+            pacSourceMenuItem.isHidden = true
+            return
+        }
+        pacCurrentURLMenuItem.title = "PAC URL: \(short(url))"
+        pacCurrentURLMenuItem.toolTip = url
+        pacSourceMenuItem.isHidden = false
+        pacSourceMenuItem.title = d.string(forKey: kPACSource) == "manual"
+            ? "Source: entered manually" : "Source: from system"
+
+        // A "Save Only" URL that isn't applied yet: show what macOS really uses.
+        if let sys = systemPACSnapshot, sys.url != url {
+            pacSystemMenuItem.title = "System is using: \(short(sys.url))"
+            pacSystemMenuItem.toolTip = sys.url
+            pacSystemMenuItem.isHidden = false
         }
     }
 
@@ -548,5 +627,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         alert.messageText     = title
         alert.informativeText = message
         alert.runModal()
+    }
+}
+
+struct SystemPAC {
+    let url: String
+    let enabled: Bool
+}
+
+extension AppDelegate: NSMenuDelegate {
+    /// Re-read the system PAC every time the menu opens, so the PAC line and
+    /// the Enable Auto Proxy checkmark reflect changes made outside the app
+    /// (System Settings, networksetup, personal_proxy's macos/deploy.yml).
+    func menuWillOpen(_ menu: NSMenu) {
+        syncPACFromSystem()
+        updatePACURLMenuItem()
+        pacEnabledMenuItem.state = isPACEnabled() ? .on : .off
     }
 }

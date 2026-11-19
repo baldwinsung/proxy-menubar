@@ -37,6 +37,13 @@ A lightweight native macOS menu bar app that shows your **current proxy IP addre
   Results open in a window with **Copy Report**; the menu shows the last
   result. Test URLs are editable under **Proxy Configuration → Set Diagnostic
   Test URLs…** (add an internal host to check it goes DIRECT).
+- **PAC URL follows the system** — on launch and every time the menu opens,
+  the app reads the PAC URL macOS is using and shows it with its source:
+  **from system** (set outside the app — System Settings, `networksetup`,
+  Ansible) or **entered manually** (via Set PAC URL…). A Save Only URL that
+  isn't applied yet also shows **System is using: …**. When the system PAC
+  changes outside the app, the system wins, so Enable Auto Proxy never
+  re-applies a stale URL.
 - **Preferences** → Open at Login toggle
 - **Help** → link to GitHub
 - Hides from Dock (`LSUIElement`) — lives only in the menu bar
