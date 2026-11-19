@@ -52,6 +52,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         syncPACFromSystem()
         buildMenu()
+
+        // Touch the LAN once at launch so macOS shows the Local Network
+        // "Allow" prompt right away (it only appears on a real LAN
+        // connection, and can't be granted programmatically). Harmless once
+        // the user has answered; re-prompts if a rebuild changed the app's
+        // signing identity.
+        DispatchQueue.global(qos: .utility).async {
+            if let t = LocalNetworkProbe.target(candidates: []) {
+                _ = LocalNetworkProbe.check(host: t.host, port: t.port, grace: 30)
+            }
+        }
         startAutoRefresh()
         refresh()
 

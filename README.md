@@ -34,6 +34,13 @@ A lightweight native macOS menu bar app that shows your **current proxy IP addre
      whether traffic really goes where the PAC says
   6. **Effective settings** — PAC, WPAD, manual proxies and bypass list as
      macOS applies them now
+  - **Local Network permission** — whether macOS lets this app reach LAN
+    addresses (macOS 15+ privacy). Denied shows as ❌ with the fix, instead of
+    every LAN proxy failing with "Network is down"; waits ~10 s in case the
+    Allow prompt is on screen. **Local Network Settings…** in the window opens
+    the pane. Browsers need their own permission, which can't be checked or
+    granted from here. The app also touches the LAN once at launch so macOS
+    asks right after install.
   Results open in a window with **Copy Report**; the menu shows the last
   result. Test URLs are editable under **Proxy Configuration → Set Diagnostic
   Test URLs…** (add an internal host to check it goes DIRECT).

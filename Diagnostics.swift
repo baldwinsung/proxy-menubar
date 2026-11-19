@@ -6,6 +6,8 @@
 //   1. PAC fetch       — can the PAC file be downloaded, and is it a PAC file?
 //   2. PAC evaluation  — what the PAC returns for each test URL (macOS's own
 //                        PAC engine, the one Safari uses)
+//   Local Network      — has macOS allowed this app onto the LAN? (macOS 15+
+//                        privacy; when denied, every LAN proxy looks dead)
 //   3. Proxy reachable — a TCP connection to each proxy's port (not ping)
 //   4. Proxy works     — a real HTTPS request through each proxy
 //   5. Egress          — public IP direct vs through the system vs per proxy
@@ -123,6 +125,26 @@ final class ProxyDiagnostics {
             r.add(.info, "Skipped (no PAC file)")
         }
 
+        // Local Network permission: without it every LAN proxy fails 3 + 4
+        // with a misleading "Network is down".
+        r.section("Local Network permission (macOS privacy)")
+        var lanDenied = false
+        if let t = LocalNetworkProbe.target(candidates: proxies) {
+            switch LocalNetworkProbe.check(host: t.host, port: t.port) {
+            case .allowed:
+                r.add(.ok, "This app is allowed on the local network (tested \(t.host):\(t.port))")
+            case .denied:
+                lanDenied = true
+                r.add(.fail, "Denied: macOS blocks this app from the local network, so LAN proxies look unreachable (macOS reports it as \"Network is down\")")
+                r.detail("Fix: Privacy & Security → Local Network → turn on MacProxyMenuBar (button below), then quit and reopen the app")
+            case .unknown(let why):
+                r.add(.warn, "Couldn't tell (\(why)) — if an Allow prompt is showing, click Allow and run again")
+            }
+        } else {
+            r.add(.info, "No LAN address to test against (no private-IP proxy, no default gateway)")
+        }
+        r.add(.info, "Browsers need their own Local Network permission (Chrome, Firefox, …; Safari is exempt) — other apps' settings can't be checked from here")
+
         // 3 + 4
         r.section("3. Proxy reachable (TCP connect)")
         if proxies.isEmpty { r.add(.info, "No proxy servers configured or returned by the PAC") }
@@ -137,6 +159,9 @@ final class ProxyDiagnostics {
                 reachable.insert(p)
             } else {
                 r.add(.fail, "\(p.label) — \(err ?? "no connection")")
+                if lanDenied && LocalNetworkProbe.isPrivateIPv4(p.host) {
+                    r.detail("blocked by the Local Network permission above, not necessarily down")
+                }
             }
         }
 
@@ -189,6 +214,8 @@ final class ProxyDiagnostics {
             if let want = pacSaysProxyForEgress {
                 if directBlocked, let pip = viaProxyIP[want], pip == sys {
                     r.add(.ok, "Traffic goes through \(want.label), as the PAC says, and direct connections are blocked, so apps that ignore the proxy settings can't get around it")
+                } else if directBlocked && viaProxyIP[want] == nil {
+                    r.add(.info, "Direct connections are blocked; \(want.label)'s own egress is unknown (checks 3/4 couldn't reach it), so it can't be compared with \(sys)")
                 } else if directBlocked {
                     r.add(.warn, "Direct connections are blocked, but system egress \(sys) doesn't match \(want.label)'s egress")
                 } else if let pip = viaProxyIP[want], pip == sys, direct.ip == pip {
@@ -197,6 +224,8 @@ final class ProxyDiagnostics {
                     r.add(.ok, "Traffic goes through \(want.label), as the PAC says")
                 } else if let d = direct.ip, d == sys {
                     r.add(.warn, "PAC says \(want.label), but the system path egresses directly (\(sys)) — macOS isn't applying the PAC (cached? another service first in the service order?)")
+                } else if viaProxyIP[want] == nil {
+                    r.add(.info, "PAC says \(want.label); its egress is unknown (checks 3/4 couldn't reach it), so it can't be compared with \(sys)")
                 } else {
                     r.add(.warn, "PAC says \(want.label); system egress \(sys) doesn't match that proxy's egress")
                 }
@@ -537,6 +566,106 @@ final class ProxyDiagnostics {
     }
 }
 
+// MARK: - Local Network permission
+
+enum LocalNetworkAccess {
+    case allowed, denied, unknown(String)
+}
+
+/// macOS 15+ asks the user before an app may talk to LAN addresses
+/// (loopback is exempt). There is no API to read or grant the setting, so
+/// this infers it from a real connection attempt — which is also what makes
+/// macOS show the Allow prompt the first time.
+enum LocalNetworkProbe {
+    static let settingsURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_LocalNetwork")!
+
+    /// A LAN address to test: the first proxy on a private IPv4 address,
+    /// else the default gateway (port 80; refused is fine — it still proves
+    /// packets got out).
+    static func target(candidates: [ProxyEndpoint]) -> (host: String, port: Int)? {
+        if let p = candidates.first(where: { isPrivateIPv4($0.host) }) { return (p.host, p.port) }
+        if let gw = defaultGateway() { return (gw, 80) }
+        return nil
+    }
+
+    static func isPrivateIPv4(_ s: String) -> Bool {
+        let parts = s.split(separator: ".", omittingEmptySubsequences: false)
+        let o = parts.compactMap { Int($0) }
+        guard parts.count == 4, o.count == 4, o.allSatisfy({ (0...255).contains($0) }) else { return false }
+        return o[0] == 10
+            || (o[0] == 172 && (16...31).contains(o[1]))
+            || (o[0] == 192 && o[1] == 168)
+            || (o[0] == 169 && o[1] == 254)
+    }
+
+    static func defaultGateway() -> String? {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/sbin/route")
+        task.arguments = ["-n", "get", "default"]
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = FileHandle.nullDevice
+        guard (try? task.run()) != nil else { return nil }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        task.waitUntilExit()
+        let out = String(data: data, encoding: .utf8) ?? ""
+        for line in out.components(separatedBy: "\n") {
+            let t = line.trimmingCharacters(in: .whitespaces)
+            if t.hasPrefix("gateway:") {
+                let gw = String(t.dropFirst("gateway:".count)).trimmingCharacters(in: .whitespaces)
+                return isPrivateIPv4(gw) ? gw : nil
+            }
+        }
+        return nil
+    }
+
+    /// Any outcome except a Local Network denial — connected, refused,
+    /// unreachable — means the permission isn't what's in the way. A denied
+    /// connection sits in .waiting and turns .ready if the user clicks Allow,
+    /// so keep waiting up to `grace` seconds in case the prompt is on screen.
+    static func check(host: String, port: Int, grace: TimeInterval = 10) -> LocalNetworkAccess {
+        guard let p = NWEndpoint.Port(rawValue: UInt16(clamping: port)) else { return .unknown("bad port \(port)") }
+        let conn = NWConnection(host: NWEndpoint.Host(host), port: p, using: .tcp)
+        let lock = NSLock()
+        var result: LocalNetworkAccess?
+        var sawDenied = false
+        let done = DispatchSemaphore(value: 0)
+        func finish(_ r: LocalNetworkAccess) {
+            lock.lock(); defer { lock.unlock() }
+            guard result == nil else { return }
+            result = r
+            done.signal()
+        }
+        conn.stateUpdateHandler = { state in
+            switch state {
+            case .ready:
+                finish(.allowed)
+            case .waiting(let e):
+                if isDenial(conn, e) { lock.lock(); sawDenied = true; lock.unlock() } else { finish(.allowed) }
+            case .failed(let e):
+                finish(isDenial(conn, e) ? .denied : .allowed)
+            default:
+                break
+            }
+        }
+        conn.start(queue: DispatchQueue.global(qos: .userInitiated))
+        _ = done.wait(timeout: .now() + grace)
+        conn.cancel()
+        conn.stateUpdateHandler = nil   // the handler captures conn; break the cycle
+        lock.lock(); defer { lock.unlock() }
+        if let r = result { return r }
+        return sawDenied ? .denied : .unknown("no answer from \(host):\(port) in \(Int(grace)) s")
+    }
+
+    /// macOS 26 reports a Local Network denial as POSIX ENETDOWN ("Network is
+    /// down", NWError 50); the path's unsatisfiedReason says so explicitly.
+    private static func isDenial(_ conn: NWConnection, _ e: NWError) -> Bool {
+        if conn.currentPath?.unsatisfiedReason == .localNetworkDenied { return true }
+        if case .posix(let code) = e, code == .ENETDOWN { return true }
+        return false
+    }
+}
+
 // MARK: - Report window
 
 final class DiagnosticsWindowController: NSWindowController {
@@ -544,6 +673,7 @@ final class DiagnosticsWindowController: NSWindowController {
     private let statusLabel = NSTextField(labelWithString: "")
     private let runButton = NSButton(title: "Run Again", target: nil, action: nil)
     private let copyButton = NSButton(title: "Copy Report", target: nil, action: nil)
+    private let lanButton = NSButton(title: "Local Network Settings…", target: nil, action: nil)
     private var report: DiagnosticsReport?
     var onFinished: ((DiagnosticsReport) -> Void)?
 
@@ -576,9 +706,11 @@ final class DiagnosticsWindowController: NSWindowController {
         runButton.action = #selector(runAgain)
         copyButton.target = self
         copyButton.action = #selector(copyReport)
+        lanButton.target = self
+        lanButton.action = #selector(openLocalNetworkSettings)
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        let buttons = NSStackView(views: [statusLabel, NSView(), copyButton, runButton])
+        let buttons = NSStackView(views: [statusLabel, NSView(), lanButton, copyButton, runButton])
         buttons.orientation = .horizontal
         buttons.translatesAutoresizingMaskIntoConstraints = false
 
@@ -618,6 +750,10 @@ final class DiagnosticsWindowController: NSWindowController {
                 self.onFinished?(r)
             }
         }
+    }
+
+    @objc func openLocalNetworkSettings() {
+        NSWorkspace.shared.open(LocalNetworkProbe.settingsURL)
     }
 
     @objc func copyReport() {
