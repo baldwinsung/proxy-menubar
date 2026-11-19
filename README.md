@@ -119,7 +119,11 @@ If any service reports `Enabled: Yes`, the proxy is shown as active with its hos
 
 ## Set up your proxy
 
-Manage your proxy via pac ( proxy auto config ) file. Use scripts at https://github.com/baldwinsung/scripts_apple_mac/tree/main/proxy to get setup.
+Manage your proxy with a PAC (proxy auto-config) file. MDN documents the
+format, with examples — this one routes by URL pattern:
+[Proxy Auto-Configuration (PAC) file — load balancing/routing based on URL patterns](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Proxy_servers_and_tunneling/Proxy_Auto-Configuration_PAC_file#load_balancingrouting_based_on_url_patterns).
+Then set its URL under **Proxy Configuration → Set PAC URL…** and run
+**🩺 Run Diagnostics…** to check it.
 
 ## License
 
