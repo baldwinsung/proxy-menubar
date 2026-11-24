@@ -52,7 +52,8 @@ A lightweight native macOS menu bar app that shows your **current proxy IP addre
   changes outside the app, the system wins, so Enable Auto Proxy never
   re-applies a stale URL.
 - **Preferences** → Open at Login toggle
-- **Help** → link to GitHub
+- **Help** → **About MacProxyMenuBar** (version, where the public IP comes from, what else the app contacts, privacy, source link) and a link to GitHub
+- **Public IP source** — fetched from `https://myip.baldwinsung.com` through your current proxy settings, so it shows the address the internet sees
 - Hides from Dock (`LSUIElement`) — lives only in the menu bar
 
 ## Requirements

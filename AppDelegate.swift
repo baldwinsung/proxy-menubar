@@ -143,6 +143,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Help submenu
         let helpMenu = NSMenu()
+        let aboutItem = NSMenuItem(title: "About MacProxyMenuBar", action: #selector(showAbout), keyEquivalent: "")
+        aboutItem.target = self
+        helpMenu.addItem(aboutItem)
+        helpMenu.addItem(NSMenuItem.separator())
+
         let githubItem = NSMenuItem(title: "GitHub: baldwinsung", action: #selector(openGitHub), keyEquivalent: "")
         githubItem.target = self
         helpMenu.addItem(githubItem)
@@ -599,6 +604,41 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - Help
+
+    // MARK: - About
+
+    static let repoURL = "https://github.com/baldwinsung/proxy-menubar"
+
+    /// Standard macOS About panel (icon, version, build, copyright from the
+    /// bundle) plus credits that say where each piece of data comes from.
+    @objc func showAbout() {
+        let body = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+        let bold = NSFont.boldSystemFont(ofSize: NSFont.smallSystemFontSize)
+        let para = NSMutableParagraphStyle()
+        para.alignment = .center
+        para.paragraphSpacing = 4
+        let credits = NSMutableAttributedString()
+        func add(_ text: String, font: NSFont, link: String? = nil) {
+            var attrs: [NSAttributedString.Key: Any] = [.font: font, .paragraphStyle: para,
+                                                        .foregroundColor: NSColor.labelColor]
+            if let link = link, let url = URL(string: link) { attrs[.link] = url }
+            credits.append(NSAttributedString(string: text, attributes: attrs))
+        }
+        add("Shows your public IP and proxy status, and manages the macOS auto-proxy (PAC) setting.\n\n", font: body)
+        add("Public IP\n", font: bold)
+        add("Pulled from ", font: body)
+        add("myip.baldwinsung.com", font: body, link: "https://myip.baldwinsung.com")
+        add(" over your current proxy settings, so it is the address the internet sees (the proxy's when one is in use). Refreshed every 30 s while auto-refresh is on; click the IP in the menu to copy it.\n\n", font: body)
+        add("Other network use\n", font: bold)
+        add("A reverse-DNS lookup of that IP, pings to your configured proxy servers, your PAC file, and the diagnostic test URLs when you run Diagnostics.\n\n", font: body)
+        add("Privacy\n", font: bold)
+        add("No analytics or telemetry. Settings are stored only on this Mac.\n\n", font: body)
+        add("Source code (MIT License)", font: body, link: AppDelegate.repoURL)
+        add("\nRequires macOS 12 or later.", font: body)
+
+        NSApp.activate(ignoringOtherApps: true)   // menu-bar app: bring the panel to the front
+        NSApp.orderFrontStandardAboutPanel(options: [.credits: credits])
+    }
 
     @objc func openGitHub() {
         if let url = URL(string: "https://github.com/baldwinsung") {
