@@ -271,8 +271,12 @@ class ProxyChecker {
 
     // MARK: - External IP Fetch
 
+    /// Where the public IP comes from (also shown in the menu and About).
+    static let ipServiceURL = URL(string: "https://myip.baldwinsung.com")!
+    static var ipServiceHost: String { ipServiceURL.host ?? ipServiceURL.absoluteString }
+
     private func fetchExternalIP() -> String? {
-        guard let url = URL(string: "https://myip.baldwinsung.com") else { return nil }
+        let url = ProxyChecker.ipServiceURL
         var request = URLRequest(url: url, timeoutInterval: 6)
         request.setValue("ProxyMenuBar/1.0", forHTTPHeaderField: "User-Agent")
 

@@ -258,14 +258,14 @@
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "MacProxyMenuBar connects to proxy servers and PAC hosts on your local network to check that they work.";
 				INFOPLIST_FILE = Info.plist;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2025. MIT License.";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2025–2026 Baldwin Sung. MIT License.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 12.0;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.user.SimpleProxyMenuBar;
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.baldwinsung.MacProxyMenuBar;
 				PRODUCT_NAME = MacProxyMenuBar;
 				SDKROOT = macosx;
 				SUPPORTED_PLATFORMS = macosx;
@@ -290,14 +290,14 @@
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "MacProxyMenuBar connects to proxy servers and PAC hosts on your local network to check that they work.";
 				INFOPLIST_FILE = Info.plist;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2025. MIT License.";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2025–2026 Baldwin Sung. MIT License.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 12.0;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.user.SimpleProxyMenuBar;
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.baldwinsung.MacProxyMenuBar;
 				PRODUCT_NAME = MacProxyMenuBar;
 				SDKROOT = macosx;
 				SUPPORTED_PLATFORMS = macosx;

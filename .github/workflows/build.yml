@@ -5,16 +5,54 @@ on:
     branches: [main]
   pull_request:
 
-permissions:
-  contents: read
-
 jobs:
   build:
     runs-on: macos-latest
+    permissions:
+      contents: write   # gh release create (push to main only)
     steps:
       - uses: actions/checkout@v7
-      - name: xcodebuild (unsigned)
+        with:
+          fetch-depth: 0   # build number = commit count
+
+      - name: Version
+        id: v
+        run: |
+          build=$(git rev-list --count HEAD)
+          marketing=$(sed -n 's/.*MARKETING_VERSION = \([^;]*\);.*/\1/p' SimpleProxyMenuBar.xcodeproj/project.pbxproj | head -1)
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "marketing=$marketing" >> "$GITHUB_OUTPUT"
+          echo "tag=v$marketing.$build" >> "$GITHUB_OUTPUT"
+
+      - name: xcodebuild (Release, ad-hoc signed)
         run: |
           xcodebuild -project SimpleProxyMenuBar.xcodeproj -scheme SimpleProxyMenuBar \
             -configuration Release -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" build
+            CURRENT_PROJECT_VERSION=${{ steps.v.outputs.build }} build
+          app=build/Build/Products/Release/MacProxyMenuBar.app
+          codesign --verify --deep --strict "$app"
+          codesign -dv "$app" 2>&1 | grep -E 'Identifier|Signature'
+          lipo -archs "$app/Contents/MacOS/MacProxyMenuBar"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' -c 'Print :CFBundleVersion' -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist"
+
+      - name: Package
+        run: |
+          ditto -c -k --keepParent build/Build/Products/Release/MacProxyMenuBar.app MacProxyMenuBar.zip
+          shasum -a 256 MacProxyMenuBar.zip > MacProxyMenuBar.zip.sha256
+          cat MacProxyMenuBar.zip.sha256
+
+      - name: Install test (install.sh on the built zip)
+        run: |
+          OPEN_AS_UID=$(id -u) bash install.sh --zip MacProxyMenuBar.zip --sha256 MacProxyMenuBar.zip.sha256 || true
+          test -d /Applications/MacProxyMenuBar.app
+          pkill -x MacProxyMenuBar || true
+
+      - name: Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git log -1 --format='%s%n%n%b' | grep -v '^Co-Authored-By' > notes.txt
+          gh release create "${{ steps.v.outputs.tag }}" MacProxyMenuBar.zip MacProxyMenuBar.zip.sha256 install.sh \
+            --target "$GITHUB_SHA" --title "MacProxyMenuBar ${{ steps.v.outputs.marketing }} (${{ steps.v.outputs.build }})" \
+            --notes-file notes.txt

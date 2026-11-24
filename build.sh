@@ -17,11 +17,15 @@ rm -rf ~/Library/Developer/Xcode/DerivedData/$SCHEME-*
 echo "🔨 Building $APP_NAME..."
 
 # Build with xcodebuild
+# Build number = git commit count, same as the GitHub releases (v1.1.<N>),
+# so "Check for Updates…" compares like with like.
+BUILD_NUMBER=$(git rev-list --count HEAD 2>/dev/null || echo 0)
 xcodebuild \
     -project "$PROJECT" \
     -scheme "$SCHEME" \
     -configuration Release \
     -derivedDataPath build \
+    CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
     build
 
 # Find the built .app
@@ -34,6 +38,9 @@ fi
 
 echo "📲 Installing to /Applications..."
 sudo ditto "$APP_PATH" "$INSTALL_PATH"
+# Owned by you, not root, so the in-app "Check for Updates…" can replace it
+# without a password prompt.
+sudo chown -R "$(id -u):admin" "$INSTALL_PATH"
 if [ -d "/Applications/$OLD_APP.app" ]; then
     echo "🧹 Removing the old /Applications/$OLD_APP.app"
     sudo rm -rf "/Applications/$OLD_APP.app"

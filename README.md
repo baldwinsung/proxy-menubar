@@ -12,6 +12,32 @@ A lightweight native macOS menu bar app that shows your **current proxy IP addre
 
 ---
 
+## Install / upgrade
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/baldwinsung/proxy-menubar/main/install.sh | bash
+```
+
+Downloads the latest [release](https://github.com/baldwinsung/proxy-menubar/releases),
+checks its SHA-256, quits the running app, removes every previous copy
+(including the old `SimpleProxyMenuBar.app`), installs to `/Applications` and
+relaunches. It asks for your password only if the old copy is root-owned.
+Behind a proxy, `export https_proxy=…` first (curl doesn't read PAC files).
+
+**Upgrading from the menu:** Help → **Check for Updates…** (the app also
+checks quietly at launch and retitles the item **⬆︎ Update to …** when one is
+out). It downloads the release through your proxy settings and runs the same
+`install.sh`. Releases are ad-hoc signed, not notarized, so after an upgrade
+macOS may ask again for Local Network access.
+
+**Versions:** `1.1 (58)` = `MARKETING_VERSION` (build number = git commit
+count). Every push to `main` that builds publishes release `v1.1.58`.
+
+**Bundle ID** is `com.baldwinsung.MacProxyMenuBar` since 1.1 (was Xcode's
+placeholder `com.user.SimpleProxyMenuBar`). The first launch copies the PAC
+URL and diagnostic test URLs from the old ID; turn **Preferences → Open at
+Login** on again once.
+
 ## Features
 
 - **Native Swift** — no dependencies, no Python, no Electron
@@ -53,7 +79,7 @@ A lightweight native macOS menu bar app that shows your **current proxy IP addre
   re-applies a stale URL.
 - **Preferences** → Open at Login toggle
 - **Help** → **About MacProxyMenuBar** (version, where the public IP comes from, what else the app contacts, privacy, source link) and a link to GitHub
-- **Public IP source** — fetched from `https://myip.baldwinsung.com` through your current proxy settings, so it shows the address the internet sees
+- **Public IP source** — fetched from `https://myip.baldwinsung.com` through your current proxy settings, so it shows the address the internet sees; the menu shows "via myip.baldwinsung.com" under the IP
 - Hides from Dock (`LSUIElement`) — lives only in the menu bar
 
 ## Requirements
@@ -79,7 +105,9 @@ open SimpleProxyMenuBar.xcodeproj
 ./build.sh
 ```
 
-Builds a Release binary with `xcodebuild` and installs it to `/Applications` using `ditto`.
+Builds a Release binary with `xcodebuild` (build number = git commit count)
+and installs it to `/Applications` using `ditto`, owned by you so the in-app
+updater can replace it without a password.
 
 ## Project Structure
 

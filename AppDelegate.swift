@@ -13,6 +13,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Menu items
     let ipMenuItem               = NSMenuItem(title: "External IP: Loading...", action: #selector(copyIP), keyEquivalent: "")
+    let ipSourceMenuItem         = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+    lazy var updateMenuItem      = NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")
     let proxyStatusMenuItem      = NSMenuItem(title: "Proxy: Checking...", action: nil, keyEquivalent: "")
     let proxyDetailMenuItem      = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     let refreshMenuItem          = NSMenuItem(title: "⟳  Refresh", action: #selector(manualRefresh), keyEquivalent: "r")
@@ -35,6 +37,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     let kPACSource = "pac_url_source"          // "system" | "manual"
     let kPACLastSystem = "pac_url_last_system" // system PAC URL seen at the last sync
     let kDiagOnLaunch = "diag_on_launch"
+    let kMigratedOldID = "migrated_from_old_bundle_id"
+    /// Bundle ID before 2026-11-24 (Xcode's placeholder); settings are copied from it once.
+    static let oldBundleID = "com.user.SimpleProxyMenuBar"
 
     /// The system's PAC as of the last syncPACFromSystem() (nil = none configured).
     var systemPACSnapshot: SystemPAC?
@@ -43,6 +48,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        migrateOldSettings()
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.title = "🔍 ..."
@@ -66,6 +72,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         startAutoRefresh()
         refresh()
 
+        // Quiet update check shortly after launch: only retitles the
+        // Help menu item if a newer release exists.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { self.checkForUpdates(quiet: true) }
+
         // Set by "Save & Enable": check the new PAC actually works once the
         // relaunched app has settled.
         if UserDefaults.standard.bool(forKey: kDiagOnLaunch) {
@@ -83,6 +93,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ipMenuItem.target = self
         ipMenuItem.toolTip = "Click to copy IP"
         menu.addItem(ipMenuItem)
+        ipSourceMenuItem.attributedTitle = NSAttributedString(
+            string: "via \(ProxyChecker.ipServiceHost)",
+            attributes: [.font: NSFont.menuFont(ofSize: NSFont.smallSystemFontSize),
+                         .foregroundColor: NSColor.secondaryLabelColor])
+        ipSourceMenuItem.isEnabled = false
+        ipSourceMenuItem.indentationLevel = 1
+        ipSourceMenuItem.toolTip = "The public IP is pulled from \(ProxyChecker.ipServiceURL.absoluteString) over your current proxy settings."
+        menu.addItem(ipSourceMenuItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -146,6 +164,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let aboutItem = NSMenuItem(title: "About MacProxyMenuBar", action: #selector(showAbout), keyEquivalent: "")
         aboutItem.target = self
         helpMenu.addItem(aboutItem)
+        updateMenuItem.target = self
+        helpMenu.addItem(updateMenuItem)
         helpMenu.addItem(NSMenuItem.separator())
 
         let githubItem = NSMenuItem(title: "GitHub: baldwinsung", action: #selector(openGitHub), keyEquivalent: "")
@@ -627,7 +647,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         add("Shows your public IP and proxy status, and manages the macOS auto-proxy (PAC) setting.\n\n", font: body)
         add("Public IP\n", font: bold)
         add("Pulled from ", font: body)
-        add("myip.baldwinsung.com", font: body, link: "https://myip.baldwinsung.com")
+        add(ProxyChecker.ipServiceHost, font: body, link: ProxyChecker.ipServiceURL.absoluteString)
         add(" over your current proxy settings, so it is the address the internet sees (the proxy's when one is in use). Refreshed every 30 s while auto-refresh is on; click the IP in the menu to copy it.\n\n", font: body)
         add("Other network use\n", font: bold)
         add("A reverse-DNS lookup of that IP, pings to your configured proxy servers, your PAC file, and the diagnostic test URLs when you run Diagnostics.\n\n", font: body)
@@ -638,6 +658,75 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         NSApp.activate(ignoringOtherApps: true)   // menu-bar app: bring the panel to the front
         NSApp.orderFrontStandardAboutPanel(options: [.credits: credits])
+    }
+
+    // MARK: - Settings migration
+
+    /// The bundle ID changed from Xcode's placeholder on 2026-11-24, which
+    /// gives the app a fresh defaults domain. Copy our own keys across once.
+    /// (Not sandboxed, so the old domain is readable.)
+    func migrateOldSettings() {
+        let d = UserDefaults.standard
+        guard !d.bool(forKey: kMigratedOldID) else { return }
+        d.set(true, forKey: kMigratedOldID)
+        guard let old = d.persistentDomain(forName: AppDelegate.oldBundleID) else { return }
+        for key in [kPACURL, kPACSource, kPACLastSystem, ProxyDiagnostics.kTestURLs] where d.object(forKey: key) == nil {
+            if let v = old[key] { d.set(v, forKey: key) }
+        }
+    }
+
+    // MARK: - Updates
+
+    var pendingRelease: Updater.Release?
+
+    @objc func checkForUpdates() {
+        if let rel = pendingRelease { offerUpdate(rel) } else { checkForUpdates(quiet: false) }
+    }
+
+    func checkForUpdates(quiet: Bool) {
+        if !quiet { updateMenuItem.title = "Checking for Updates…" }
+        Updater.latest { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                switch result {
+                case .success(let rel) where rel.build > Updater.currentBuild:
+                    self.pendingRelease = rel
+                    self.updateMenuItem.title = "⬆︎ Update to \(rel.displayVersion)…"
+                    if !quiet { self.offerUpdate(rel) }
+                case .success:
+                    self.updateMenuItem.title = "Check for Updates…"
+                    if !quiet { self.showAlert("You're up to date", message: "MacProxyMenuBar \(Updater.currentDisplayVersion) is the latest version.") }
+                case .failure(let err):
+                    self.updateMenuItem.title = "Check for Updates…"
+                    if !quiet { self.showAlert("Update check failed", message: err.localizedDescription) }
+                }
+            }
+        }
+    }
+
+    func offerUpdate(_ rel: Updater.Release) {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "MacProxyMenuBar \(rel.displayVersion) is available"
+        alert.informativeText = "You have \(Updater.currentDisplayVersion).\n\n\(rel.notes)\n\nInstalling quits the app, replaces it in /Applications (removing any older copy, including SimpleProxyMenuBar) and reopens it. macOS may ask for your password and to allow Local Network access again."
+        alert.addButton(withTitle: "Install & Relaunch")
+        alert.addButton(withTitle: "Release Notes")
+        alert.addButton(withTitle: "Later")
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            updateMenuItem.title = "Downloading \(rel.displayVersion)…"
+            Updater.install(rel) { [weak self] err in
+                guard let err = err else { return }
+                DispatchQueue.main.async {
+                    self?.updateMenuItem.title = "⬆︎ Update to \(rel.displayVersion)…"
+                    self?.showAlert("Update failed", message: err.localizedDescription)
+                }
+            }
+        case .alertSecondButtonReturn:
+            NSWorkspace.shared.open(rel.pageURL)
+        default:
+            break
+        }
     }
 
     @objc func openGitHub() {
@@ -694,5 +783,104 @@ extension AppDelegate: NSMenuDelegate {
         syncPACFromSystem()
         updatePACURLMenuItem()
         pacEnabledMenuItem.state = isPACEnabled() ? .on : .off
+    }
+}
+
+// MARK: - Updater
+
+/// Releases are published by .github/workflows/build.yml on every push to
+/// main, tagged v<MARKETING_VERSION>.<build> where build = git commit count
+/// (also the app's CFBundleVersion). Installing runs that release's own
+/// install.sh, the same script as the README one-liner.
+enum Updater {
+    static let repo = "baldwinsung/proxy-menubar"
+
+    struct Release {
+        let tag: String           // "v1.1.58"
+        let build: Int            // 58
+        let displayVersion: String // "1.1 (58)"
+        let notes: String
+        let pageURL: URL
+    }
+
+    static var currentBuild: Int {
+        Int(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "") ?? 0
+    }
+    static var currentDisplayVersion: String {
+        let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        return "\(v) (\(currentBuild))"
+    }
+
+    struct UpdateError: LocalizedError {
+        let errorDescription: String?
+        init(_ s: String) { errorDescription = s }
+    }
+
+    static func latest(completion: @escaping (Result<Release, Error>) -> Void) {
+        var req = URLRequest(url: URL(string: "https://api.github.com/repos/\(repo)/releases/latest")!, timeoutInterval: 10)
+        req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        req.setValue("MacProxyMenuBar/\(currentBuild)", forHTTPHeaderField: "User-Agent")
+        URLSession.shared.dataTask(with: req) { data, resp, err in
+            if let err = err { return completion(.failure(err)) }
+            guard (resp as? HTTPURLResponse)?.statusCode == 200, let data = data,
+                  let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let tag = j["tag_name"] as? String, let page = (j["html_url"] as? String).flatMap(URL.init(string:)) else {
+                return completion(.failure(UpdateError("No release information from GitHub (HTTP \((resp as? HTTPURLResponse)?.statusCode ?? 0)).")))
+            }
+            // v1.1.58 -> version 1.1, build 58
+            var parts = tag.dropFirst(tag.hasPrefix("v") ? 1 : 0).split(separator: ".").map(String.init)
+            guard parts.count >= 2, let build = Int(parts.removeLast()) else {
+                return completion(.failure(UpdateError("Unexpected release tag \(tag).")))
+            }
+            let notes = (j["body"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            completion(.success(Release(tag: tag, build: build, displayVersion: "\(parts.joined(separator: ".")) (\(build))",
+                                        notes: String(notes.prefix(600)), pageURL: page)))
+        }.resume()
+    }
+
+    /// Downloads the release's install.sh, zip and .sha256 with URLSession
+    /// (which follows the system proxy/PAC; a background curl wouldn't),
+    /// then runs install.sh on the local zip. install.sh verifies the
+    /// checksum, quits this app, swaps the bundle and relaunches it. If
+    /// /Applications/MacProxyMenuBar.app isn't writable by this user (e.g.
+    /// build.sh installed it with sudo), it runs through osascript's admin
+    /// prompt; install.sh then hands ownership back so later updates don't ask.
+    static func install(_ rel: Release, completion: @escaping (Error?) -> Void) {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("MacProxyMenuBar-update-\(rel.build)")
+        try? FileManager.default.removeItem(at: dir)
+        do { try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true) } catch { return completion(error) }
+        let base = "https://github.com/\(repo)/releases/download/\(rel.tag)/"
+        let files = ["install.sh", "MacProxyMenuBar.zip", "MacProxyMenuBar.zip.sha256"]
+        func fetch(_ i: Int) {
+            guard i < files.count else { return run() }
+            URLSession.shared.downloadTask(with: URL(string: base + files[i])!) { tmp, resp, err in
+                if let err = err { return completion(err) }
+                guard (resp as? HTTPURLResponse)?.statusCode == 200, let tmp = tmp else {
+                    return completion(UpdateError("Download of \(files[i]) failed (HTTP \((resp as? HTTPURLResponse)?.statusCode ?? 0))."))
+                }
+                do { try FileManager.default.moveItem(at: tmp, to: dir.appendingPathComponent(files[i])) } catch { return completion(error) }
+                fetch(i + 1)
+            }.resume()
+        }
+        func run() {
+            let app = "/Applications/MacProxyMenuBar.app"
+            let fm = FileManager.default
+            let writable = fm.isWritableFile(atPath: "/Applications") &&
+                (!fm.fileExists(atPath: app) || fm.isWritableFile(atPath: app + "/Contents"))
+            let q = { (s: String) in "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+            let d = dir.path
+            let cmd = "OPEN_AS_UID=\(getuid()) /bin/bash \(q(d + "/install.sh")) --zip \(q(d + "/MacProxyMenuBar.zip")) --sha256 \(q(d + "/MacProxyMenuBar.zip.sha256")) >\(q(d + "/install.log")) 2>&1"
+            let p = Process()
+            if writable {
+                p.executableURL = URL(fileURLWithPath: "/bin/bash")
+                p.arguments = ["-c", cmd]
+            } else {
+                let escaped = cmd.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+                p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+                p.arguments = ["-e", "do shell script \"\(escaped)\" with administrator privileges"]
+            }
+            do { try p.run(); completion(nil) } catch { completion(error) }   // install.sh quits this app
+        }
+        fetch(0)
     }
 }
