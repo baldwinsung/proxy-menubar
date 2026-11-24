@@ -41,7 +41,7 @@ if [ -z "$ZIP" ]; then
                | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1)"
         [ -n "$TAG" ] || { echo "❌ Could not find the latest release" >&2; exit 1; }
     fi
-    echo "⬇️  Downloading $APP $TAG…"
+    echo "⬇️  Downloading $APP ${TAG}…"
     BASE="https://github.com/$REPO/releases/download/$TAG"
     curl -fsSL -o "$WORK/$APP.zip" "$BASE/$APP.zip"
     curl -fsSL -o "$WORK/$APP.zip.sha256" "$BASE/$APP.zip.sha256"
@@ -80,7 +80,7 @@ for p in "$HOME/Applications/$APP.app" "$HOME/Applications/$OLD_APP.app"; do
     if [ -e "$p" ]; then rm -rf "$p"; fi
 done
 
-echo "📲 Installing to $DEST…"
+echo "📲 Installing to ${DEST}…"
 $SUDO ditto "$NEW" "$DEST"
 xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || $SUDO xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
 
