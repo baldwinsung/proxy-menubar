@@ -74,7 +74,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Quiet update check shortly after launch: only retitles the
         // Help menu item if a newer release exists.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { self.checkForUpdates(quiet: true) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { self.runUpdateCheck(quiet: true) }
 
         // Set by "Save & Enable": check the new PAC actually works once the
         // relaunched app has settled.
@@ -680,10 +680,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var pendingRelease: Updater.Release?
 
     @objc func checkForUpdates() {
-        if let rel = pendingRelease { offerUpdate(rel) } else { checkForUpdates(quiet: false) }
+        if let rel = pendingRelease { offerUpdate(rel) } else { runUpdateCheck(quiet: false) }
     }
 
-    func checkForUpdates(quiet: Bool) {
+    func runUpdateCheck(quiet: Bool) {
         if !quiet { updateMenuItem.title = "Checking for Updates…" }
         Updater.latest { [weak self] result in
             DispatchQueue.main.async {
