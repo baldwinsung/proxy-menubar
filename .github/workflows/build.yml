@@ -32,7 +32,8 @@ jobs:
           app=build/Build/Products/Release/MacProxyMenuBar.app
           codesign --verify --deep --strict "$app"
           codesign -dv "$app" 2>&1 | grep -E 'Identifier|Signature'
-          lipo -archs "$app/Contents/MacOS/MacProxyMenuBar"
+          exe=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")
+          lipo -archs "$app/Contents/MacOS/$exe"
           /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' -c 'Print :CFBundleVersion' -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist"
 
       - name: Package
